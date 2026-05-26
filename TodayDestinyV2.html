@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>子平八字・客戶名冊管理系統 (旗艦版)</title>
+    <style>
+        :root { --bg: #f4f6f8; --card: #fff; --primary: #2c3e50; --accent: #2980b9; --danger: #e74c3c; --text: #2c3e50; --sidebar-w: 250px; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* 佈局：左側列表，右側內容 */
+        .sidebar { width: var(--sidebar-w); background: #34495e; color: #ecf0f1; display: flex; flex-direction: column; border-right: 1px solid #ddd; }
+        .main-content { flex: 1; padding: 20px; overflow-y: auto; }
+        
+        /* 左側列表樣式 */
+        .sidebar-header { padding: 15px; background: #2c3e50; font-weight: bold; border-bottom: 1px solid #465c71; display: flex; justify-content: space-between; align-items: center;}
+        .profile-list { flex: 1; overflow-y: auto; list-style: none; padding: 0; margin: 0; }
+        .profile-item { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #465c71; transition: 0.2s; display: flex; justify-content: space-between; }
+        .profile-item:hover { background: #3e5871; }
+        .profile-item.active { background: var(--accent); border-left: 4px solid #fff; }
+        .profile-item .del-btn { color: #95a5a6; font-size: 0.8em; cursor: pointer; padding: 2px 5px; }
+        .profile-item .del-btn:hover { color: #e74c3c; background: rgba(255,255,255,0.1); border-radius: 3px; }
+        
+        .sidebar-footer { padding: 10px; background: #2c3e50; border-top: 1px solid #465c71; }
+        .sidebar-btn { width: 100%; background: transparent; border: 1px solid #95a5a6; color: #bdc3c7; padding: 5px; cursor: pointer; margin-top: 5px; font-size: 0.85em; }
+        .sidebar-btn:hover { color: #fff; border-color: #fff; }
+        input[type="file"] { display: none; }
+
+        /* 右側卡片樣式 */
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: var(--card); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 0; color: var(--primary); font-size: 1.2em; display: flex; justify-content: space-between; }
+        
+        .grid-input { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px; margin-bottom: 15px; }
+        label { display: block; font-size: 0.8em; font-weight: bold; color: #7f8c8d; margin-bottom: 3px; }
+        select, input { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        
+        /* 操作按鈕 */
+        .action-bar { display: flex; gap: 10px; margin-bottom: 10px; }
+        button.action-btn { background: var(--accent); color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button.save-btn { background: #27ae60; }
+        button.new-btn { background: #95a5a6; }
+        button:hover { opacity: 0.9; }
+
+        .result-box { background: #fdfefe; border: 1px solid #ecf0f1; border-left: 5px solid var(--accent); padding: 15px; margin-top: 10px; white-space: pre-wrap; font-family: monospace; font-size: 0.95em; }
+        .bazi-col { flex: 1; border-right: 1px solid #ddd; text-align: center; font-weight: bold; background: #eee; padding: 5px; font-size: 0.9em; }
+        .bazi-row { display: flex; border-radius: 5px; overflow: hidden; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <div class="sidebar-header">
+        <span>📖 客戶名冊</span>
+        <span style="font-size:0.8em; color:#bdc3c7;" id="countLabel">0人</span>
+    </div>
+    <ul class="profile-list" id="profileList">
+        </ul>
+    <div class="sidebar-footer">
+        <button class="sidebar-btn" onclick="downloadAllJSON()">⬇ 匯出整本名冊 (JSON)</button>
+        <button class="sidebar-btn" onclick="document.getElementById('fileInput').click()">⬆ 匯入名冊 (JSON)</button>
+        <input type="file" id="fileInput" accept=".json" onchange="importJSON(this)">
+        <small style="display:block; margin-top:5px; color:#7f8c8d; font-size:0.7em; text-align:center;">資料存於瀏覽器 LocalStorage</small>
+    </div>
+</div>
+
+<div class="main-content">
+    <div class="container">
+        
+        <div class="action-bar">
+            <button class="action-btn new-btn" onclick="createNewProfile()">➕ 新增/清空</button>
+            <button class="action-btn save-btn" onclick="saveProfileToList()">💾 儲存到名冊</button>
+        </div>
+
+        <div class="card">
+            <h2>1. 本命資料 <span id="currentModeLabel" style="font-size:0.7em; color:#e67e22;">(未儲存)</span></h2>
+            <div class="grid-input">
+                <div style="grid-column: span 2;"><label>姓名 (識別ID)</label><input type="text" id="name" placeholder="輸入姓名"></div>
+                <div><label>性別</label><select id="gender"><option value="M">男</option><option value="F">女</option></select></div>
+            </div>
+            <div class="grid-input">
+                <div><label>年干</label><select class="tg" id="yearGan"></select></div>
+                <div><label>年支</label><select class="dz" id="yearZhi"></select></div>
+                <div><label>月干</label><select class="tg" id="monthGan"></select></div>
+                <div><label>月支</label><select class="dz" id="monthZhi"></select></div>
+                <div><label>日主</label><select class="tg" id="dayGan"></select></div>
+                <div><label>日支</label><select class="dz" id="dayZhi"></select></div>
+                <div><label>時干</label><select class="tg" id="hourGan"></select></div>
+                <div><label>時支</label><select class="dz" id="hourZhi"></select></div>
+            </div>
+            <button onclick="calculateYongShen(true)" class="action-btn">🔍 計算格局與喜用神</button>
+            <div id="yongShenResult" class="result-box" style="display:none;"></div>
+        </div>
+
+        <div class="card">
+            <h2>2. 歲運參數 (流年流月)</h2>
+            <div class="grid-input">
+                <div><label>大運干</label><select class="tg" id="luckGan"></select></div>
+                <div><label>大運支</label><select class="dz" id="luckZhi"></select></div>
+                <div><label>流年干</label><select class="tg" id="yearLuckGan"></select></div>
+                <div><label>流年支</label><select class="dz" id="yearLuckZhi"></select></div>
+                <div><label>流月干</label><select class="tg" id="monthLuckGan"></select></div>
+                <div><label>流月支</label><select class="dz" id="monthLuckZhi"></select></div>
+                <div><label>流日干</label><select class="tg" id="dayLuckGan"></select></div>
+                <div><label>流日支</label><select class="dz" id="dayLuckZhi"></select></div>
+            </div>
+            <button onclick="calculateReaction()" class="action-btn">⚡ 啟動吉凶推演</button>
+        </div>
+
+        <div class="card" id="finalResultCard" style="display:none;">
+            <div class="bazi-row" id="battlefieldDisplay"></div>
+            <h3>吉凶推論</h3>
+            <div id="predictionResult" class="result-box"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 基礎數據 ---
+    const TG = [{n:"甲",w:"木"},{n:"乙",w:"木"},{n:"丙",w:"火"},{n:"丁",w:"火"},{n:"戊",w:"土"},{n:"己",w:"土"},{n:"庚",w:"金"},{n:"辛",w:"金"},{n:"壬",w:"水"},{n:"癸",w:"水"}];
+    const DZ = [{n:"子",w:"水"},{n:"丑",w:"土"},{n:"寅",w:"木"},{n:"卯",w:"木"},{n:"辰",w:"土"},{n:"巳",w:"火"},{n:"午",w:"火"},{n:"未",w:"土"},{n:"申",w:"金"},{n:"酉",w:"金"},{n:"戌",w:"土"},{n:"亥",w:"水"}];
+    const WX = { "木":{s:"火",k:"土"}, "火":{s:"土",k:"金"}, "土":{s:"金",k:"水"}, "金":{s:"水",k:"木"}, "水":{s:"木",k:"火"} };
+
+    // --- 全局變數 ---
+    let STATE = { isWeak: false, yongShen: [], lastScoreLog: "" };
+    let PROFILES = []; // 名冊陣列
+    let currentProfileId = null; // 當前編輯的 ID (用姓名當Key)
+
+    window.onload = function() {
+        initSelects();
+        loadAllProfiles(); // 從 LocalStorage 載入名冊
+        // 如果沒有資料，載入預設案例
+        if (PROFILES.length === 0) {
+            loadDefaultExample();
+        } else {
+            // 載入第一筆
+            loadProfileByName(PROFILES[0].name);
+        }
+    };
+
+    function initSelects() {
+        document.querySelectorAll('.tg').forEach(s => TG.forEach((t,i)=>s.add(new Option(t.n, i))));
+        document.querySelectorAll('.dz').forEach(s => DZ.forEach((d,i)=>s.add(new Option(d.n, i))));
+    }
+
+    // --- 名冊管理系統 (Profile Manager) ---
+
+    // 1. 讀取所有名冊
+    function loadAllProfiles() {
+        const saved = localStorage.getItem('baziBook_v1');
+        if (saved) {
+            PROFILES = JSON.parse(saved);
+        }
+        renderSidebar();
+    }
+
+    // 2. 儲存當前資料到名冊
+    function saveProfileToList() {
+        const name = document.getElementById('name').value.trim();
+        if (!name) { alert("請輸入姓名作為識別！"); return; }
+        
+        // 確保先計算過狀態
+        if (STATE.yongShen.length === 0) calculateYongShen(false);
+
+        const currentData = {
+            name: name,
+            inputs: getInputs(),
+            state: STATE,
+            timestamp: new Date().getTime()
+        };
+
+        // 檢查是否存在 (更新 vs 新增)
+        const idx = PROFILES.findIndex(p => p.name === name);
+        if (idx >= 0) {
+            PROFILES[idx] = currentData; // 更新
+        } else {
+            PROFILES.push(currentData); // 新增
+        }
+
+        // 存入硬碟
+        localStorage.setItem('baziBook_v1', JSON.stringify(PROFILES));
+        
+        // 更新 UI
+        currentProfileId = name;
+        renderSidebar();
+        updateStatusLabel(`(已儲存: ${name})`);
+        alert(`資料「${name}」已儲存！`);
+    }
+
+    // 3. 渲染左側列表
+    function renderSidebar() {
+        const list = document.getElementById('profileList');
+        list.innerHTML = "";
+        document.getElementById('countLabel').innerText = `${PROFILES.length}人`;
+
+        PROFILES.forEach(p => {
+            const li = document.createElement('li');
+            li.className = `profile-item ${p.name === currentProfileId ? 'active' : ''}`;
+            li.innerHTML = `
+                <span onclick="loadProfileByName('${p.name}')">${p.name}</span>
+                <span class="del-btn" onclick="deleteProfile('${p.name}')">✕</span>
+            `;
+            list.appendChild(li);
+        });
+    }
+
+    // 4. 點擊載入某人
+    function loadProfileByName(name) {
+        const p = PROFILES.find(x => x.name === name);
+        if (!p) return;
+
+        currentProfileId = name;
+        applyData(p.inputs, p.state);
+        renderSidebar(); // 更新 active 狀態
+        updateStatusLabel(`(當前檔案: ${name})`);
+    }
+
+    // 5. 刪除某人
+    function deleteProfile(name) {
+        if (!confirm(`確定要刪除「${name}」的資料嗎？`)) return;
+        PROFILES = PROFILES.filter(p => p.name !== name);
+        localStorage.setItem('baziBook_v1', JSON.stringify(PROFILES));
+        
+        if (currentProfileId === name) {
+            createNewProfile(); // 如果刪除的是當前顯示的，就清空畫面
+        } else {
+            renderSidebar();
+        }
+    }
+
+    // 6. 清空/新增
+    function createNewProfile() {
+        currentProfileId = null;
+        document.querySelectorAll('input').forEach(el => el.value = "");
+        document.querySelectorAll('select').forEach(el => el.value = 0);
+        document.getElementById('yongShenResult').style.display = 'none';
+        document.getElementById('finalResultCard').style.display = 'none';
+        STATE = { isWeak: false, yongShen: [], lastScoreLog: "" };
+        renderSidebar();
+        updateStatusLabel("(新檔案)");
+        document.getElementById('name').focus();
+    }
+
+    // --- 匯入匯出 (JSON) ---
+
+    function downloadAllJSON() {
+        if (PROFILES.length === 0) { alert("名冊是空的！"); return; }
+        const exportObj = {
+            version: "v1",
+            exportedAt: new Date().toISOString(),
+            data: PROFILES
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportObj, null, 2));
+        const dl = document.createElement('a');
+        dl.setAttribute("href", dataStr);
+        dl.setAttribute("download", `八字名冊_全部備份_${new Date().toISOString().slice(0,10)}.json`);
+        dl.click();
+    }
+
+    function importJSON(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const json = JSON.parse(e.target.result);
+                // 兼容單檔與多檔
+                let newData = [];
+                if (Array.isArray(json)) newData = json; // 舊格式或純陣列
+                else if (json.data && Array.isArray(json.data)) newData = json.data; // 新格式
+                else if (json.inputs) newData = [json]; // 單人檔
+
+                // 合併邏輯 (依名字去重)
+                let count = 0;
+                newData.forEach(newP => {
+                    // 簡單驗證
+                    if(newP.name && newP.inputs) {
+                        const idx = PROFILES.findIndex(p => p.name === newP.name);
+                        if(idx >= 0) PROFILES[idx] = newP; // 覆蓋
+                        else PROFILES.push(newP); // 新增
+                        count++;
+                    }
+                });
+
+                localStorage.setItem('baziBook_v1', JSON.stringify(PROFILES));
+                renderSidebar();
+                alert(`成功匯入 ${count} 筆資料！`);
+            } catch (err) {
+                console.error(err);
+                alert("檔案格式錯誤");
+            }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    }
+
+    // --- 輔助功能 ---
+    function getInputs() {
+        const d = {};
+        document.querySelectorAll('input[type="text"], select').forEach(el => d[el.id] = el.value);
+        return d;
+    }
+    function applyData(inputs, state) {
+        for (let k in inputs) {
+            if(document.getElementById(k)) document.getElementById(k).value = inputs[k];
+        }
+        STATE = state || { isWeak: false, yongShen: [], lastScoreLog: "" };
+        if (STATE.lastScoreLog) {
+            const el = document.getElementById('yongShenResult');
+            el.innerText = STATE.lastScoreLog;
+            el.style.display = 'block';
+        }
+    }
+    function updateStatusLabel(text) {
+        document.getElementById('currentModeLabel').innerText = text;
+    }
+    function loadDefaultExample() {
+        // 載入預設案例 (緣主) 並存入列表，方便使用者第一次看
+        setVal('yearGan',9); setVal('yearZhi',1); setVal('monthGan',0); setVal('monthZhi',2);
+        setVal('dayGan',6); setVal('dayZhi',4); setVal('hourGan',4); setVal('hourZhi',2);
+        setVal('luckGan',4); setVal('luckZhi',8); setVal('yearLuckGan',1); setVal('yearLuckZhi',5);
+        setVal('monthLuckGan',5); setVal('monthLuckZhi',1); setVal('dayLuckGan',8); setVal('dayLuckZhi',2);
+        document.getElementById('name').value = "範例-緣主";
+        // 不自動存檔，等用戶自己按保存
+    }
+    function setVal(id,v) { document.getElementById(id).value = v; }
+
+    // --- 計算邏輯 (維持原核心演算法) ---
+    // (此處省略 calculateYongShen 與 calculateReaction 的重複代碼，請直接使用上一版的核心邏輯)
+    // 為了確保完整運行，以下是壓縮版的核心邏輯：
+    
+    function calculateYongShen(ui) {
+        const dm = TG[document.getElementById('dayGan').value];
+        const mz = DZ[document.getElementById('monthZhi').value];
+        let score=0, log=`>>> 【格局分析】\n日主：${dm.n} (${dm.w}) | 月令：${mz.n} (${mz.w})\n`;
+        
+        let isDeLing = (mz.w===dm.w || WX[mz.w].s===dm.w);
+        log+=`1.得令：${isDeLing?"是(+50)":"否"}\n`; if(isDeLing) score+=50;
+        
+        let gScore=0, gH=[]; 
+        ['yearZhi','dayZhi','hourZhi'].forEach(id=>{ let z=DZ[document.getElementById(id).value]; if(z.w===dm.w||WX[z.w].s===dm.w){gScore+=10;gH.push(z.n);} });
+        log+=`2.得地：${gH.length?gH.join(',')+"(+"+gScore+")":"無"}\n`; score+=gScore;
+        
+        let sScore=0, sH=[];
+        ['yearGan','monthGan','hourGan'].forEach(id=>{ let g=TG[document.getElementById(id).value]; if(g.w===dm.w||WX[g.w].s===dm.w){sScore+=5;sH.push(g.n);} });
+        log+=`3.得勢：${sH.length?sH.join(',')+"(+"+sScore+")":"無"}\n`; score+=sScore;
+        
+        log+=`總分：${score} -> 【${score<40?"身弱":"身強"}】`;
+        STATE.isWeak = score < 40;
+        STATE.yongShen = STATE.isWeak ? [Object.keys(WX).find(k=>WX[k].s===dm.w), dm.w] : [WX[dm.w].s, WX[dm.w].k, Object.keys(WX).find(k=>WX[k].k===dm.w)];
+        STATE.lastScoreLog = log;
+        if(ui) { document.getElementById('yongShenResult').innerText = log; document.getElementById('yongShenResult').style.display='block'; }
+    }
+
+    function calculateReaction() {
+        if(STATE.yongShen.length===0) calculateYongShen(false);
+        let zhis=[], gans=[], html="";
+        const map=[{id:'luck',n:'運'},{id:'yearLuck',n:'年'},{id:'monthLuck',n:'月'},{id:'dayLuck',n:'日'},{id:'year',n:'年'},{id:'month',n:'月'},{id:'day',n:'日'},{id:'hour',n:'時'}];
+        map.forEach(p=>{
+            let g=TG[document.getElementById(p.id+'Gan').value], z=DZ[document.getElementById(p.id+'Zhi').value];
+            gans.push({src:p.n,v:g}); zhis.push({src:p.n,v:z});
+            html+=`<div class="bazi-col">${p.n}<br>${g.n}<br>${z.n}</div>`;
+        });
+        document.getElementById('battlefieldDisplay').innerHTML = html;
+        document.getElementById('finalResultCard').style.display='block';
+
+        let events=[];
+        for(let i=0;i<zhis.length;i++){
+            for(let j=i+1;j<zhis.length;j++){
+                let pair=[zhis[i].v.n,zhis[j].v.n].sort().join(''), cause=`${zhis[i].src}${zhis[i].v.n}沖${zhis[j].src}${zhis[j].v.n}`;
+                if(pair==='寅申') events.push({msg:'⚠ 金木相戰：注意筋骨、車關', cause});
+                if(pair==='寅申') events.push({msg:'✈ 驛馬發動：奔波忙碌', cause});
+                if(pair==='辰戌') events.push({msg:'⚠ 庫沖：腸胃不適、變動', cause});
+                if(pair==='巳亥') events.push({msg:'⚠ 水火沖：心血管、眼疾', cause});
+                if(pair==='子午') events.push({msg:'⚠ 水火沖：情緒、心悸', cause});
+                if(pair==='卯酉') events.push({msg:'⚠ 金木沖：手腳傷、刀傷', cause});
+                if(pair==='丑未') events.push({msg:'⚠ 土沖：皮膚、脾胃', cause});
+            }
+        }
+        
+        // 顯示結論
+        let log = "【健康】：\n";
+        let grp = {}; events.forEach(e=>{ if(!grp[e.msg])grp[e.msg]=[]; if(!grp[e.msg].includes(e.cause))grp[e.msg].push(e.cause); });
+        if(Object.keys(grp).length===0) log+="平穩。\n";
+        else for(let k in grp) log+=`${k}\n  └ ${grp[k].join(',')}\n`;
+
+        log+="\n【財官】：\n";
+        let dG=TG[document.getElementById('dayLuckGan').value], dM=TG[document.getElementById('dayGan').value];
+        let good=STATE.yongShen.includes(dG.w);
+        if(STATE.isWeak){
+            if(!good && WX[dM.w].k===dG.w) log+=`⚠ 財耗身弱：防破財 (${dG.n}財)`;
+            else if(good) log+=`★ 貴人助：利合作 (${dG.n}印比)`;
+            else log+="平平。";
+        } else {
+            if(WX[dM.w].k===dG.w) log+=`★ 財星旺：利求財 (${dG.n}財)`;
+            else log+="平穩。";
+        }
+        document.getElementById('predictionResult').innerText = log;
+    }
+
+</script>
+
+</body>
+</html>

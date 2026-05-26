@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>子平八字・流年吉凶演算法 (專業版)</title>
+    <style>
+        :root { --bg: #f4f7f6; --card: #fff; --primary: #34495e; --accent: #e74c3c; --text: #2c3e50; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; line-height: 1.6; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: var(--card); padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        h2 { border-bottom: 2px solid var(--bg); padding-bottom: 10px; margin-top: 0; color: var(--primary); font-size: 1.2em; }
+        .grid-input { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-bottom: 15px; }
+        label { display: block; font-size: 0.85em; font-weight: bold; color: #7f8c8d; margin-bottom: 3px; }
+        select, input { width: 100%; padding: 8px; border: 1px solid #bdc3c7; border-radius: 4px; box-sizing: border-box; font-size: 1em;}
+        button { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-right: 10px; font-weight: bold;}
+        button:hover { opacity: 0.9; }
+        button.secondary { background: #16a085; }
+        
+        /* 結果區塊樣式 */
+        .result-box { background: #fdfefe; border: 1px solid #ecf0f1; border-left: 5px solid var(--primary); padding: 15px; margin-top: 15px; white-space: pre-wrap; font-family: monospace; font-size: 0.95em; line-height: 1.8; }
+        .cause-tag { font-size: 0.85em; color: #e67e22; background: #fff3e0; padding: 2px 5px; border-radius: 3px; margin-left: 5px; display: inline-block; border: 1px solid #ffe0b2; }
+        
+        .bazi-row { display: flex; justify-content: space-between; text-align: center; background: #eee; padding: 10px; border-radius: 5px; font-weight: bold; margin-bottom: 10px;}
+        .bazi-col { flex: 1; border-right: 1px solid #ddd; }
+        .bazi-col:last-child { border: none; }
+        .bazi-lbl { font-size: 0.8em; color: #888; display: block;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h2>1. 本命資料 (User Profile)</h2>
+        <div class="grid-input">
+            <div><label>姓名</label><input type="text" id="name" value="緣主"></div>
+            <div><label>性別</label><select id="gender"><option value="M">男</option><option value="F">女</option></select></div>
+        </div>
+        <div class="grid-input">
+            <div><label>年干</label><select class="tg" id="yearGan"></select></div>
+            <div><label>年支</label><select class="dz" id="yearZhi"></select></div>
+            <div><label>月干</label><select class="tg" id="monthGan"></select></div>
+            <div><label>月支</label><select class="dz" id="monthZhi"></select></div>
+            <div><label>日主</label><select class="tg" id="dayGan"></select></div>
+            <div><label>日支</label><select class="dz" id="dayZhi"></select></div>
+            <div><label>時干</label><select class="tg" id="hourGan"></select></div>
+            <div><label>時支</label><select class="dz" id="hourZhi"></select></div>
+        </div>
+        <button onclick="saveAndCalculateBasic()" class="secondary">💾 存檔並計算喜用神</button>
+        <div id="yongShenResult" class="result-box" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+        <h2>2. 歲運參數 (Timing Input)</h2>
+        <div class="grid-input">
+            <div><label>大運天干</label><select class="tg" id="luckGan"></select></div>
+            <div><label>大運地支</label><select class="dz" id="luckZhi"></select></div>
+            <div><label>流年天干</label><select class="tg" id="yearLuckGan"></select></div>
+            <div><label>流年地支</label><select class="dz" id="yearLuckZhi"></select></div>
+            <div><label>流月天干</label><select class="tg" id="monthLuckGan"></select></div>
+            <div><label>流月地支</label><select class="dz" id="monthLuckZhi"></select></div>
+            <div><label>流日天干</label><select class="tg" id="dayLuckGan"></select></div>
+            <div><label>流日地支</label><select class="dz" id="dayLuckZhi"></select></div>
+        </div>
+        <button onclick="calculateReaction()">⚡ 啟動吉凶推演</button>
+    </div>
+
+    <div class="card" id="finalResultCard" style="display:none;">
+        <div class="bazi-row" id="battlefieldDisplay"></div>
+        <h3>化學反應與吉凶推論</h3>
+        <div id="predictionResult" class="result-box"></div>
+    </div>
+</div>
+
+<script>
+    // --- 基礎數據 ---
+    const TG = [
+        {n:"甲",w:"木",y:"陽"},{n:"乙",w:"木",y:"陰"},{n:"丙",w:"火",y:"陽"},{n:"丁",w:"火",y:"陰"},
+        {n:"戊",w:"土",y:"陽"},{n:"己",w:"土",y:"陰"},{n:"庚",w:"金",y:"陽"},{n:"辛",w:"金",y:"陰"},
+        {n:"壬",w:"水",y:"陽"},{n:"癸",w:"水",y:"陰"}
+    ];
+    const DZ = [
+        {n:"子",w:"水"},{n:"丑",w:"土"},{n:"寅",w:"木"},{n:"卯",w:"木"},{n:"辰",w:"土"},{n:"巳",w:"火"},
+        {n:"午",w:"火"},{n:"未",w:"土"},{n:"申",w:"金"},{n:"酉",w:"金"},{n:"戌",w:"土"},{n:"亥",w:"水"}
+    ];
+    const WX = { 
+        "木":{s:"火",k:"土"}, "火":{s:"土",k:"金"}, "土":{s:"金",k:"水"}, "金":{s:"水",k:"木"}, "水":{s:"木",k:"火"} 
+    };
+    
+    // 全局狀態
+    let STATE = {
+        isWeak: false,
+        yongShen: [], // 喜用神五行
+        lastScoreLog: "" // 存儲計分過程文字
+    };
+
+    window.onload = function() {
+        initSelects();
+        loadData();
+    };
+
+    function initSelects() {
+        document.querySelectorAll('.tg').forEach(s => TG.forEach((t,i)=>s.add(new Option(t.n, i))));
+        document.querySelectorAll('.dz').forEach(s => DZ.forEach((d,i)=>s.add(new Option(d.n, i))));
+    }
+
+    // --- 核心功能 1: 存取與自動計算 ---
+    function saveAndCalculateBasic() {
+        // 1. 儲存表單
+        const inputs = {};
+        document.querySelectorAll('input, select').forEach(el => inputs[el.id] = el.value);
+        
+        // 2. 執行計算
+        calculateYongShen(true); // true 表示要更新 STATE
+
+        // 3. 將計算結果也存入 localStorage
+        const saveData = {
+            inputs: inputs,
+            state: STATE
+        };
+        localStorage.setItem('baziFullData', JSON.stringify(saveData));
+        
+        // UI 反饋
+        const btn = document.querySelector('button.secondary');
+        const originalText = btn.innerText;
+        btn.innerText = "✅ 已更新並存檔";
+        setTimeout(() => btn.innerText = originalText, 1000);
+    }
+
+    function loadData() {
+        const saved = localStorage.getItem('baziFullData');
+        if (saved) {
+            const data = JSON.parse(saved);
+            // 填回表單
+            for (let k in data.inputs) {
+                if(document.getElementById(k)) document.getElementById(k).value = data.inputs[k];
+            }
+            // 填回狀態與結果
+            if (data.state) {
+                STATE = data.state;
+                // 顯示結果 (Requirement B)
+                if (STATE.lastScoreLog) {
+                    const resBox = document.getElementById('yongShenResult');
+                    resBox.style.display = 'block';
+                    resBox.innerText = STATE.lastScoreLog;
+                }
+            }
+        } else {
+            // 預設案例
+            setVal('yearGan',9); setVal('yearZhi',1); setVal('monthGan',0); setVal('monthZhi',2);
+            setVal('dayGan',6); setVal('dayZhi',4); setVal('hourGan',4); setVal('hourZhi',2);
+            setVal('luckGan',4); setVal('luckZhi',8); setVal('yearLuckGan',1); setVal('yearLuckZhi',5);
+            setVal('monthLuckGan',5); setVal('monthLuckZhi',1); setVal('dayLuckGan',8); setVal('dayLuckZhi',2);
+        }
+    }
+    function setVal(id,v) { document.getElementById(id).value = v; }
+
+    // --- 核心功能 2: 詳細計分算身強弱 (Requirement A) ---
+    function calculateYongShen(updateState = false) {
+        const dmIdx = parseInt(document.getElementById('dayGan').value);
+        const dm = TG[dmIdx]; // 日主
+        const mzIdx = parseInt(document.getElementById('monthZhi').value);
+        const mz = DZ[mzIdx]; // 月令
+
+        let log = `>>> 【格局定調分析】\n日主：${dm.n} (${dm.w})\n月令：${mz.n} (${mz.w})\n----------------------------\n`;
+        let score = 0;
+
+        // 1. 得令 (50%)
+        let isDeLing = (mz.w === dm.w || WX[mz.w].s === dm.w);
+        log += `1. 得令 (權重50%)：\n`;
+        if (isDeLing) {
+            score += 50;
+            log += `   ✅ 是。月令 [${mz.n}] 生助日主 -> +50分\n`;
+        } else {
+            log += `   ❌ 否。月令 [${mz.n}] 剋洩耗日主 -> +0分\n`;
+        }
+
+        // 2. 得地 (30%)
+        log += `\n2. 得地 (權重30%)：\n`;
+        let groundHelpers = [];
+        let groundScore = 0;
+        ['yearZhi', 'dayZhi', 'hourZhi'].forEach(id => {
+            let label = document.getElementById(id).parentElement.querySelector('label').innerText;
+            let z = DZ[document.getElementById(id).value];
+            // 判斷根氣：同我(比劫) 或 生我(印)
+            if (z.w === dm.w || WX[z.w].s === dm.w) {
+                groundScore += 10;
+                groundHelpers.push(`${label} [${z.n}] (+10)`);
+            }
+        });
+        if (groundHelpers.length > 0) {
+            log += `   ✅ 發現幫手：\n   -> ${groundHelpers.join('\n   -> ')}\n   共得 +${groundScore}分\n`;
+        } else {
+            log += `   ❌ 地支無強力根氣 -> +0分\n`;
+        }
+        score += groundScore;
+
+        // 3. 得勢 (20%)
+        log += `\n3. 得勢 (權重20%)：\n`;
+        let skyHelpers = [];
+        let skyScore = 0;
+        ['yearGan', 'monthGan', 'hourGan'].forEach(id => {
+            let label = document.getElementById(id).parentElement.querySelector('label').innerText;
+            let g = TG[document.getElementById(id).value];
+            if (g.w === dm.w || WX[g.w].s === dm.w) {
+                skyScore += 5;
+                skyHelpers.push(`${label} [${g.n}] (+5)`);
+            }
+        });
+        if (skyHelpers.length > 0) {
+            log += `   ✅ 發現幫手：\n   -> ${skyHelpers.join('\n   -> ')}\n   共得 +${skyScore}分\n`;
+        } else {
+            log += `   ❌ 天干無幫扶 -> +0分\n`;
+        }
+        score += skyScore;
+
+        // 總結
+        log += `----------------------------\n總分：${score} 分\n`;
+        let weak = score < 40; // 簡易閾值
+        log += `判定：【${weak ? "身弱" : "身強"}】\n`;
+        
+        let target = [];
+        if (weak) {
+            log += `喜用神：印星(${Object.keys(WX).find(k=>WX[k].s===dm.w)})、比劫(${dm.w})\n`;
+            target = [Object.keys(WX).find(k=>WX[k].s===dm.w), dm.w];
+        } else {
+            log += `喜用神：食傷(${WX[dm.w].s})、財星(${WX[dm.w].k})、官殺(${Object.keys(WX).find(k=>WX[k].k===dm.w)})\n`;
+            target = [WX[dm.w].s, WX[dm.w].k, Object.keys(WX).find(k=>WX[k].k===dm.w)];
+        }
+
+        const resBox = document.getElementById('yongShenResult');
+        resBox.innerText = log;
+        resBox.style.display = 'block';
+
+        if (updateState) {
+            STATE.isWeak = weak;
+            STATE.yongShen = target;
+            STATE.lastScoreLog = log;
+        }
+    }
+
+    // --- 核心功能 3: 吉凶推演與去重 (Requirement C) ---
+    function calculateReaction() {
+        // 若尚未計算強弱，先算一次
+        if (STATE.yongShen.length === 0) calculateYongShen(true);
+
+        const pillars = [
+            { id: 'luck', n: '大運' }, { id: 'yearLuck', n: '流年' },
+            { id: 'monthLuck', n: '流月' }, { id: 'dayLuck', n: '流日' },
+            { id: 'year', n: '年柱' }, { id: 'month', n: '月柱' },
+            { id: 'day', n: '日柱' }, { id: 'hour', n: '時柱' }
+        ];
+
+        // 1. 準備數據與顯示盤面
+        let displayHtml = "";
+        let zhis = [];
+        let gans = [];
+        
+        pillars.forEach(p => {
+            let g = TG[document.getElementById(p.id+'Gan').value];
+            let z = DZ[document.getElementById(p.id+'Zhi').value];
+            gans.push({ src: p.n, val: g });
+            zhis.push({ src: p.n, val: z });
+            displayHtml += `<div class="bazi-col"><span class="bazi-lbl">${p.n}</span>${g.n}<br>${z.n}</div>`;
+        });
+        document.getElementById('battlefieldDisplay').innerHTML = displayHtml;
+        document.getElementById('finalResultCard').style.display = 'block';
+
+        let analysisLog = "";
+        
+        // 2. 收集所有事件 (不直接輸出文字，而是存成物件以便歸類)
+        // 格式: { category: 'health', msg: '筋骨受傷', cause: '年支寅 vs 流日申' }
+        let events = [];
+
+        // 地支沖刑偵測
+        for(let i=0; i<zhis.length; i++) {
+            for(let j=i+1; j<zhis.length; j++) {
+                let z1 = zhis[i], z2 = zhis[j];
+                let pair = [z1.val.n, z2.val.n].sort().join('');
+                let sourceStr = `${z1.src}${z1.val.n} 沖 ${z2.src}${z2.val.n}`;
+
+                // 寅申沖
+                if (pair === '寅申') {
+                    events.push({ 
+                        cat: 'health', 
+                        text: '⚠ 注意筋骨痠痛、四肢受傷或交通意外 (金木相戰)', 
+                        cause: sourceStr 
+                    });
+                    events.push({
+                        cat: 'travel',
+                        text: '✈ 驛馬發動，奔波勞碌',
+                        cause: sourceStr
+                    });
+                }
+                // 辰戌沖
+                if (pair === '辰戌') {
+                    events.push({ 
+                        cat: 'health', 
+                        text: '⚠ 注意腸胃不適、腹脹消化問題 (土庫沖開)', 
+                        cause: sourceStr 
+                    });
+                }
+                // 子午, 卯酉, 巳亥, 丑未... (可依需求擴充)
+            }
+        }
+
+        // 3. 輸出結論 (Deduplication & Explanation)
+        
+        // 輔助函數：將相同 text 的事件合併 cause
+        function groupEvents(eventList) {
+            let map = {};
+            eventList.forEach(e => {
+                if (!map[e.text]) {
+                    map[e.text] = [];
+                }
+                map[e.text].push(e.cause);
+            });
+            return map;
+        }
+
+        const grouped = groupEvents(events);
+
+        // A. 身體狀況
+        analysisLog += `【身體狀況】：\n`;
+        let hasHealth = false;
+        for (let [text, causes] of Object.entries(grouped)) {
+            if (text.includes('⚠')) { // 假設有警告符號的是健康/風險類
+                // 去除重複的 cause
+                let uniqueCauses = [...new Set(causes)];
+                analysisLog += `${text}\n   └─ 推導依據：${uniqueCauses.join('、')}\n`;
+                hasHealth = true;
+            }
+        }
+        if (!hasHealth) analysisLog += `平穩無大礙。\n`;
+
+        // B. 財運事業 (十神判斷)
+        let dayLuckGan = TG[document.getElementById('dayLuckGan').value];
+        let dayMaster = TG[document.getElementById('dayGan').value];
+        let isGood = STATE.yongShen.includes(dayLuckGan.w);
+        
+        analysisLog += `\n【財運/事業】：\n`;
+        
+        let moneyMsg = "";
+        let moneyCause = `流日天干 [${dayLuckGan.n}] 為喜用神嗎？ ${isGood?'是':'否'}`;
+
+        if (STATE.isWeak) {
+            if (!isGood && (WX[dayMaster.w].k === dayLuckGan.w)) { // 財星壞印
+                moneyMsg = "⚠ 財多身弱：今日恐有預期外的開銷，不宜投資。";
+                moneyCause = `身弱見流日財星 [${dayLuckGan.n}] 耗身`;
+            } else if (isGood) {
+                moneyMsg = "★ 貴人運佳：有利合作或獲得資源。";
+                moneyCause = `身弱見流日印比 [${dayLuckGan.n}] 幫身`;
+            } else {
+                moneyMsg = "平平，保守為宜。";
+            }
+        } else {
+            // 身強邏輯...
+            moneyMsg = "平穩發展。";
+        }
+        
+        analysisLog += `${moneyMsg}\n   └─ 推導依據：${moneyCause}`;
+
+        // C. 驛馬補充
+        if (grouped['✈ 驛馬發動，奔波勞碌']) {
+            analysisLog += `\n\n【行程】：\n✈ 驛馬發動，奔波勞碌\n   └─ 推導依據：${[...new Set(grouped['✈ 驛馬發動，奔波勞碌'])].join('、')}`;
+        }
+
+        document.getElementById('predictionResult').innerText = analysisLog;
+    }
+</script>
+
+</body>
+</html>
